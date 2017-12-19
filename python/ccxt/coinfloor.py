@@ -25,7 +25,8 @@ class coinfloor (Exchange):
             },
             'requiredCredentials': {
                 'apiKey': True,
-                'secret': True,
+                'secret': False,
+                'password': True,
                 'uid': True,
             },
             'api': {
@@ -166,7 +167,7 @@ class coinfloor (Exchange):
             nonce = self.nonce()
             body = self.urlencode(self.extend({'nonce': nonce}, query))
             auth = self.uid + '/' + self.apiKey + ':' + self.password
-            signature = base64.b64encode(auth)
+            signature = base64.b64encode(auth.encode()).decode()
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'Authorization': 'Basic ' + signature,
