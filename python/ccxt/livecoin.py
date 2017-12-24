@@ -20,7 +20,14 @@ class livecoin (Exchange):
             'countries': ['US', 'UK', 'RU'],
             'rateLimit': 1000,
             'hasCORS': False,
+            # obsolete metainfo interface
             'hasFetchTickers': True,
+            'hasFetchCurrencies': True,
+            # new metainfo interface
+            'has': {
+                'fetchTickers': True,
+                'fetchCurrencies': True,
+            },
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/1294454/27980768-f22fc424-638a-11e7-89c9-6010a54ff9be.jpg',
                 'api': 'https://api.livecoin.net',
@@ -118,6 +125,53 @@ class livecoin (Exchange):
                 'limits': limits,
                 'info': market,
             }))
+        return result
+
+    def fetch_currencies(self, params={}):
+        response = self.publicGetInfoCoinInfo(params)
+        currencies = response['info']
+        result = {}
+        for i in range(0, len(currencies)):
+            currency = currencies[i]
+            id = currency['symbol']
+            # todo: will need to rethink the fees
+            # to add support for multiple withdrawal/deposit methods and
+            # differentiated fees for each particular method
+            code = self.common_currency_code(id)
+            precision = 8  # default precision, todo: fix "magic constants"
+            active = (currency['walletStatus'] == 'normal')
+            result[code] = {
+                'id': id,
+                'code': code,
+                'info': currency,
+                'name': currency['name'],
+                'active': active,
+                'status': 'ok',
+                'fee': currency['withdrawFee'],  # todo: redesign
+                'precision': precision,
+                'limits': {
+                    'amount': {
+                        'min': currency['minOrderAmount'],
+                        'max': math.pow(10, precision),
+                    },
+                    'price': {
+                        'min': math.pow(10, -precision),
+                        'max': math.pow(10, precision),
+                    },
+                    'cost': {
+                        'min': currency['minOrderAmount'],
+                        'max': None,
+                    },
+                    'withdraw': {
+                        'min': currency['minWithdrawAmount'],
+                        'max': math.pow(10, precision),
+                    },
+                    'deposit': {
+                        'min': currency['minDepositAmount'],
+                        'max': None,
+                    },
+                },
+            }
         return result
 
     def fetch_balance(self, params={}):

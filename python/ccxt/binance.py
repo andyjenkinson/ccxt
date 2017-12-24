@@ -6,6 +6,7 @@ from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import InsufficientFunds
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
+from ccxt.base.errors import DDoSProtection
 
 
 class binance (Exchange):
@@ -61,7 +62,7 @@ class binance (Exchange):
                     'private': 'https://api.binance.com/api/v3',
                 },
                 'www': 'https://www.binance.com',
-                'doc': 'https://www.binance.com/restapipub.html',
+                'doc': 'https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md',
                 'fees': [
                     'https://binance.zendesk.com/hc/en-us/articles/115000429332',
                     'https://support.binance.com/hc/en-us/articles/115000583311',
@@ -252,6 +253,8 @@ class binance (Exchange):
             symbol = base + '/' + quote
             filters = self.index_by(market['filters'], 'filterType')
             precision = {
+                'base': market['baseAssetPrecision'],
+                'quote': market['quotePrecision'],
                 'amount': market['baseAssetPrecision'],
                 'price': market['quotePrecision'],
             }
@@ -344,11 +347,14 @@ class binance (Exchange):
         }, params))
         return self.parse_order_book(orderbook)
 
-    def parse_ticker(self, ticker, market):
+    def parse_ticker(self, ticker, market=None):
         timestamp = self.safe_integer(ticker, 'closeTime')
         if timestamp is None:
             timestamp = self.milliseconds()
-        symbol = None
+        symbol = ticker['symbol']
+        if not market:
+            if symbol in self.markets_by_id:
+                market = self.markets_by_id[symbol]
         if market:
             symbol = market['symbol']
         return {
@@ -382,15 +388,20 @@ class binance (Exchange):
 
     def fetch_tickers(self, symbols=None, params={}):
         self.load_markets()
-        tickers = self.publicGetTickerAllBookTickers(params)
+        rawTickers = self.publicGetTicker24hr(params)
+        tickers = []
+        for i in range(0, len(rawTickers)):
+            tickers.append(self.parse_ticker(rawTickers[i]))
+        tickersBySymbol = self.index_by(tickers, 'symbol')
+        # return all of them if no symbols were passed in the first argument
+        if not symbols:
+            return tickersBySymbol
+        # otherwise filter by symbol
         result = {}
-        for i in range(0, len(tickers)):
-            ticker = tickers[i]
-            id = ticker['symbol']
-            if id in self.markets_by_id:
-                market = self.markets_by_id[id]
-                symbol = market['symbol']
-                result[symbol] = self.parse_ticker(ticker, market)
+        for i in range(0, len(symbols)):
+            symbol = symbols[i]
+            if symbol in tickersBySymbol:
+                result[symbol] = tickersBySymbol[symbol]
         return result
 
     def parse_ohlcv(self, ohlcv, market=None, timeframe='1m', since=None, limit=None):
@@ -668,12 +679,16 @@ class binance (Exchange):
 
     def handle_errors(self, code, reason, url, method, headers, body):
         if code >= 400:
+            if code == 418:
+                raise DDoSProtection(self.id + ' ' + str(code) + ' ' + reason + ' ' + body)
             if body.find('MIN_NOTIONAL') >= 0:
                 raise InvalidOrder(self.id + ' order cost = amount * price should be > 0.001 BTC ' + body)
             if body.find('LOT_SIZE') >= 0:
                 raise InvalidOrder(self.id + ' order amount should be evenly divisible by lot size, use self.amount_to_lots(symbol, amount) ' + body)
             if body.find('PRICE_FILTER') >= 0:
                 raise InvalidOrder(self.id + ' order price exceeds allowed price precision or invalid, use self.price_to_precision(symbol, amount) ' + body)
+            if body.find('Order does not exist') >= 0:
+                raise OrderNotFound(self.id + ' ' + body)
 
     def request(self, path, api='public', method='GET', params={}, headers=None, body=None):
         response = self.fetch2(path, api, method, params, headers, body)

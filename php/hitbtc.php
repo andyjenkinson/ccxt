@@ -587,7 +587,7 @@ class hitbtc extends Exchange {
     public function fetch_tickers ($symbols = null, $params = array ()) {
         $this->load_markets();
         $tickers = $this->publicGetTicker ($params);
-        $ids = array_keys ($tickers);
+        $ids = is_array ($tickers) ? array_keys ($tickers) : array ();
         $result = array ();
         for ($i = 0; $i < count ($ids); $i++) {
             $id = $ids[$i];
@@ -683,7 +683,7 @@ class hitbtc extends Exchange {
         ), $params));
     }
 
-    public function get_order_status ($status) {
+    public function parse_order_status ($status) {
         $statuses = array (
             'new' => 'open',
             'partiallyFilled' => 'open',
@@ -702,7 +702,7 @@ class hitbtc extends Exchange {
             $market = $this->markets_by_id[$order['symbol']];
         $status = $this->safe_string($order, 'orderStatus');
         if ($status)
-            $status = $this->get_order_status ($status);
+            $status = $this->parse_order_status($status);
         $averagePrice = $this->safe_float($order, 'avgPrice', 0.0);
         $price = $this->safe_float($order, 'orderPrice');
         $amount = $this->safe_float($order, 'orderQuantity');

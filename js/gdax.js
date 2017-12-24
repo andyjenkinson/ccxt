@@ -108,13 +108,15 @@ module.exports = class gdax extends Exchange {
                     'tierBased': false,
                     'percentage': false,
                     'withdraw': {
-                        'BTC': 0.001,
-                        'LTC': 0.001,
-                        'ETH': 0.001,
+                        'BCH': 0,
+                        'BTC': 0,
+                        'LTC': 0,
+                        'ETH': 0,
                         'EUR': 0.15,
                         'USD': 25,
                     },
                     'deposit': {
+                        'BCH': 0,
                         'BTC': 0,
                         'LTC': 0,
                         'ETH': 0,
@@ -306,7 +308,7 @@ module.exports = class gdax extends Exchange {
         return this.parse8601 (response['iso']);
     }
 
-    getOrderStatus (status) {
+    parseOrderStatus (status) {
         let statuses = {
             'pending': 'open',
             'active': 'open',
@@ -324,7 +326,7 @@ module.exports = class gdax extends Exchange {
             if (order['product_id'] in this.markets_by_id)
                 market = this.markets_by_id[order['product_id']];
         }
-        let status = this.getOrderStatus (order['status']);
+        let status = this.parseOrderStatus (order['status']);
         let price = this.safeFloat (order, 'price');
         let amount = this.safeFloat (order, 'size');
         let filled = this.safeFloat (order, 'filled_size');

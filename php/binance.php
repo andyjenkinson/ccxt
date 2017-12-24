@@ -55,7 +55,7 @@ class binance extends Exchange {
                     'private' => 'https://api.binance.com/api/v3',
                 ),
                 'www' => 'https://www.binance.com',
-                'doc' => 'https://www.binance.com/restapipub.html',
+                'doc' => 'https://github.com/binance-exchange/binance-official-api-docs/blob/master/rest-api.md',
                 'fees' => array (
                     'https://binance.zendesk.com/hc/en-us/articles/115000429332',
                     'https://support.binance.com/hc/en-us/articles/115000583311',
@@ -247,6 +247,8 @@ class binance extends Exchange {
             $symbol = $base . '/' . $quote;
             $filters = $this->index_by($market['filters'], 'filterType');
             $precision = array (
+                'base' => $market['baseAssetPrecision'],
+                'quote' => $market['quotePrecision'],
                 'amount' => $market['baseAssetPrecision'],
                 'price' => $market['quotePrecision'],
             );
@@ -349,11 +351,16 @@ class binance extends Exchange {
         return $this->parse_order_book($orderbook);
     }
 
-    public function parse_ticker ($ticker, $market) {
+    public function parse_ticker ($ticker, $market = null) {
         $timestamp = $this->safe_integer($ticker, 'closeTime');
         if ($timestamp === null)
             $timestamp = $this->milliseconds ();
-        $symbol = null;
+        $symbol = $ticker['symbol'];
+        if (!$market) {
+            if (is_array ($this->markets_by_id) && array_key_exists ($symbol, $this->markets_by_id)) {
+                $market = $this->markets_by_id[$symbol];
+            }
+        }
         if ($market)
             $symbol = $market['symbol'];
         return array (
@@ -389,16 +396,21 @@ class binance extends Exchange {
 
     public function fetch_tickers ($symbols = null, $params = array ()) {
         $this->load_markets();
-        $tickers = $this->publicGetTickerAllBookTickers ($params);
+        $rawTickers = $this->publicGetTicker24hr ($params);
+        $tickers = array ();
+        for ($i = 0; $i < count ($rawTickers); $i++) {
+            $tickers[] = $this->parse_ticker($rawTickers[$i]);
+        }
+        $tickersBySymbol = $this->index_by($tickers, 'symbol');
+        // return all of them if no $symbols were passed in the first argument
+        if (!$symbols)
+            return $tickersBySymbol;
+        // otherwise filter by $symbol
         $result = array ();
-        for ($i = 0; $i < count ($tickers); $i++) {
-            $ticker = $tickers[$i];
-            $id = $ticker['symbol'];
-            if (is_array ($this->markets_by_id) && array_key_exists ($id, $this->markets_by_id)) {
-                $market = $this->markets_by_id[$id];
-                $symbol = $market['symbol'];
-                $result[$symbol] = $this->parse_ticker($ticker, $market);
-            }
+        for ($i = 0; $i < count ($symbols); $i++) {
+            $symbol = $symbols[$i];
+            if (is_array ($tickersBySymbol) && array_key_exists ($symbol, $tickersBySymbol))
+                $result[$symbol] = $tickersBySymbol[$symbol];
         }
         return $result;
     }
@@ -707,12 +719,16 @@ class binance extends Exchange {
 
     public function handle_errors ($code, $reason, $url, $method, $headers, $body) {
         if ($code >= 400) {
+            if ($code == 418)
+                throw new DDoSProtection ($this->id . ' ' . (string) $code . ' ' . $reason . ' ' . $body);
             if (mb_strpos ($body, 'MIN_NOTIONAL') !== false)
                 throw new InvalidOrder ($this->id . ' order cost = amount * price should be > 0.001 BTC ' . $body);
             if (mb_strpos ($body, 'LOT_SIZE') !== false)
                 throw new InvalidOrder ($this->id . ' order amount should be evenly divisible by lot size, use $this->amount_to_lots(symbol, amount) ' . $body);
             if (mb_strpos ($body, 'PRICE_FILTER') !== false)
                 throw new InvalidOrder ($this->id . ' order price exceeds allowed price precision or invalid, use $this->price_to_precision(symbol, amount) ' . $body);
+            if (mb_strpos ($body, 'Order does not exist') !== false)
+                throw new OrderNotFound ($this->id . ' ' . $body);
         }
     }
 

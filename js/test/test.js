@@ -37,7 +37,7 @@ log.bright ('\nTESTING', { exchange: exchangeId, symbol: exchangeSymbol || 'all'
 let proxies = [
     '',
     'https://cors-anywhere.herokuapp.com/',
-    'https://crossorigin.me/',
+    // 'https://crossorigin.me/',
 ]
 
 /*  ------------------------------------------------------------------------ */
@@ -295,7 +295,7 @@ let testMyTrades = async (exchange, symbol) => {
         // log ('fetching my trades...')
         let trades = await exchange.fetchMyTrades (symbol, 0)
         log ('fetched', trades.length.toString ().green, 'trades')
-        trades.forEach (trade => log.dim ('-'.repeat (80), "\n", trade))
+        // trades.forEach (trade => log.dim ('-'.repeat (80), "\n", trade))
         // log (asTable (trades))
 
     } else {
@@ -503,7 +503,6 @@ let printExchangesTable = function () {
             'name':      exchange.name,
             'countries': countries,
         }
-
     })))
 }
 

@@ -62,7 +62,7 @@ class bithumb extends Exchange {
 
     public function fetch_markets () {
         $markets = $this->publicGetTickerAll ();
-        $currencies = array_keys ($markets['data']);
+        $currencies = is_array ($markets['data']) ? array_keys ($markets['data']) : array ();
         $result = array ();
         for ($i = 0; $i < count ($currencies); $i++) {
             $id = $currencies[$i];
@@ -110,7 +110,7 @@ class bithumb extends Exchange {
         ), $params));
         $result = array ( 'info' => $response );
         $balances = $response['data'];
-        $currencies = array_keys ($this->currencies);
+        $currencies = is_array ($this->currencies) ? array_keys ($this->currencies) : array ();
         for ($i = 0; $i < count ($currencies); $i++) {
             $currency = $currencies[$i];
             $account = $this->account ();
@@ -124,6 +124,7 @@ class bithumb extends Exchange {
     }
 
     public function fetch_order_book ($symbol, $params = array ()) {
+        $this->load_markets();
         $market = $this->market ($symbol);
         $response = $this->publicGetOrderbookCurrency (array_merge (array (
             'count' => 50, // max = 50
@@ -162,11 +163,12 @@ class bithumb extends Exchange {
     }
 
     public function fetch_tickers ($symbols = null, $params = array ()) {
+        $this->load_markets();
         $response = $this->publicGetTickerAll ($params);
         $result = array ();
         $timestamp = $response['data']['date'];
         $tickers = $this->omit ($response['data'], 'date');
-        $ids = array_keys ($tickers);
+        $ids = is_array ($tickers) ? array_keys ($tickers) : array ();
         for ($i = 0; $i < count ($ids); $i++) {
             $id = $ids[$i];
             $symbol = $id;
@@ -183,6 +185,7 @@ class bithumb extends Exchange {
     }
 
     public function fetch_ticker ($symbol, $params = array ()) {
+        $this->load_markets();
         $market = $this->market ($symbol);
         $response = $this->publicGetTickerCurrency (array_merge (array (
             'currency' => $market['base'],
@@ -213,6 +216,7 @@ class bithumb extends Exchange {
     }
 
     public function fetch_trades ($symbol, $since = null, $limit = null, $params = array ()) {
+        $this->load_markets();
         $market = $this->market ($symbol);
         $response = $this->publicGetRecentTransactionsCurrency (array_merge (array (
             'currency' => $market['base'],

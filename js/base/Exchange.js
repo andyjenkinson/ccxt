@@ -12,8 +12,10 @@ const { deepExtend
       , extend
       , sleep
       , timeout
+      , flatten
       , indexBy
       , sortBy
+      , groupBy
       , aggregate
       , uuid
       , precisionFromString } = functions
@@ -67,6 +69,7 @@ module.exports = class Exchange {
 
         this.userAgents = {
             'chrome': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36',
+            'chrome39': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.71 Safari/537.36',
         }
 
         this.headers = {}
@@ -135,9 +138,12 @@ module.exports = class Exchange {
         this.last_http_response = undefined
         this.last_json_response = undefined
 
+        this.arrayConcat = (a, b) => a.concat (b)
+
         // TODO: generate
         this.market_id                   = this.marketId
         this.market_ids                  = this.marketIds
+        this.array_concat                = this.arrayConcat
         this.implode_params              = this.implodeParams
         this.extract_params              = this.extractParams
         this.fetch_balance               = this.fetchBalance
@@ -337,12 +343,14 @@ module.exports = class Exchange {
         if (typeof this.proxy == 'function') {
 
             url = this.proxy (url)
-            headers = extend ({ 'Origin': '*' }, headers)
+            if (isNode)
+                headers = extend ({ 'Origin': '*' }, headers)
 
         } else if (typeof this.proxy == 'string') {
 
             if (this.proxy.length)
-                headers = extend ({ 'Origin': '*' }, headers)
+                if (isNode)
+                    headers = extend ({ 'Origin': '*' }, headers)
 
             url = this.proxy + url
         }
@@ -383,7 +391,7 @@ module.exports = class Exchange {
         let match = body.match ('\<title\>([^<]+)')
         if (match)
             details = match[1].trim ();
-        if ([ 429 ].includes (code)) {
+        if ([ 418, 429 ].includes (code)) {
             error = DDoSProtection
         } else if ([ 404, 409, 422, 500, 501, 502, 520, 521, 522, 525 ].includes (code)) {
             error = ExchangeNotAvailable
@@ -481,15 +489,22 @@ module.exports = class Exchange {
                     .map (market => ({
                         id: market.baseId || market.base,
                         code: market.base,
+                        precision: market.precision ? (market.precision.base || market.precision.amount) : 8,
                     }))
             const quoteCurrencies =
                 values.filter (market => 'quote' in market)
                     .map (market => ({
                         id: market.quoteId || market.quote,
                         code: market.quote,
+                        precision: market.precision ? (market.precision.quote || market.precision.price) : 8,
                     }))
-            const currencies = sortBy (baseCurrencies.concat (quoteCurrencies), 'code')
-            this.currencies = deepExtend (indexBy (currencies, 'code'), this.currencies)
+            const allCurrencies = baseCurrencies.concat (quoteCurrencies)
+            const groupedCurrencies = groupBy (allCurrencies, 'code')
+            const currencies = Object.keys (groupedCurrencies).map (code =>
+                groupedCurrencies[code].reduce ((previous, current) =>
+                    ((previous.precision > current.precision) ? previous : current), groupedCurrencies[code][0]))
+            const sortedCurrencies = sortBy (flatten (currencies), 'code')
+            this.currencies = deepExtend (indexBy (sortedCurrencies, 'code'), this.currencies)
         }
         return this.markets
     }

@@ -128,7 +128,7 @@ class bitlish extends Exchange {
     public function fetch_markets () {
         $markets = $this->publicGetPairs ();
         $result = array ();
-        $keys = array_keys ($markets);
+        $keys = is_array ($markets) ? array_keys ($markets) : array ();
         for ($p = 0; $p < count ($keys); $p++) {
             $market = $markets[$keys[$p]];
             $id = $market['id'];
@@ -178,7 +178,7 @@ class bitlish extends Exchange {
     public function fetch_tickers ($symbols = null, $params = array ()) {
         $this->load_markets();
         $tickers = $this->publicGetTickers ($params);
-        $ids = array_keys ($tickers);
+        $ids = is_array ($tickers) ? array_keys ($tickers) : array ();
         $result = array ();
         for ($i = 0; $i < count ($ids); $i++) {
             $id = $ids[$i];
@@ -214,7 +214,10 @@ class bitlish extends Exchange {
         $orderbook = $this->publicGetTradesDepth (array_merge (array (
             'pair_id' => $this->market_id($symbol),
         ), $params));
-        $timestamp = intval (intval ($orderbook['last']) / 1000);
+        $timestamp = null;
+        $last = $this->safe_integer($orderbook, 'last');
+        if ($last)
+            $timestamp = intval ($last / 1000);
         return $this->parse_order_book($orderbook, $timestamp, 'bid', 'ask', 'price', 'volume');
     }
 
@@ -251,7 +254,7 @@ class bitlish extends Exchange {
         $this->load_markets();
         $response = $this->privatePostBalance ();
         $result = array ( 'info' => $response );
-        $currencies = array_keys ($response);
+        $currencies = is_array ($response) ? array_keys ($response) : array ();
         $balance = array ();
         for ($c = 0; $c < count ($currencies); $c++) {
             $currency = $currencies[$c];
@@ -264,7 +267,7 @@ class bitlish extends Exchange {
                 $currency = 'DOGE';
             $balance[$currency] = $account;
         }
-        $currencies = array_keys ($this->currencies);
+        $currencies = is_array ($this->currencies) ? array_keys ($this->currencies) : array ();
         for ($i = 0; $i < count ($currencies); $i++) {
             $currency = $currencies[$i];
             $account = $this->account ();

@@ -112,13 +112,15 @@ class gdax (Exchange):
                     'tierBased': False,
                     'percentage': False,
                     'withdraw': {
-                        'BTC': 0.001,
-                        'LTC': 0.001,
-                        'ETH': 0.001,
+                        'BCH': 0,
+                        'BTC': 0,
+                        'LTC': 0,
+                        'ETH': 0,
                         'EUR': 0.15,
                         'USD': 25,
                     },
                     'deposit': {
+                        'BCH': 0,
                         'BTC': 0,
                         'LTC': 0,
                         'ETH': 0,
@@ -295,7 +297,7 @@ class gdax (Exchange):
         response = self.publicGetTime()
         return self.parse8601(response['iso'])
 
-    def get_order_status(self, status):
+    def parse_order_status(self, status):
         statuses = {
             'pending': 'open',
             'active': 'open',
@@ -311,7 +313,7 @@ class gdax (Exchange):
         if not market:
             if order['product_id'] in self.markets_by_id:
                 market = self.markets_by_id[order['product_id']]
-        status = self.get_order_status(order['status'])
+        status = self.parse_order_status(order['status'])
         price = self.safe_float(order, 'price')
         amount = self.safe_float(order, 'size')
         filled = self.safe_float(order, 'filled_size')

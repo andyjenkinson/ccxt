@@ -30,7 +30,7 @@ SOFTWARE.
 
 namespace ccxt;
 
-$version = '1.9.282';
+$version = '1.10.468';
 
 abstract class Exchange {
 
@@ -299,6 +299,16 @@ abstract class Exchange {
         return $arrayOfArrays;
     }
 
+    public static function flatten ($array) {
+        return array_reduce ($array, function ($acc, $item) {
+            return array_merge ($acc, is_array ($item) ? static::flatten ($item) : [$item]);
+        }, []);
+    }
+
+    public static function array_concat () {
+        return call_user_func_array ('array_merge', array_filter(func_get_args(), 'is_array'));
+    }
+
     public static function keysort ($array) {
         $result = $array;
         ksort ($result);
@@ -353,9 +363,11 @@ abstract class Exchange {
         $result = array ();
 
         foreach ($bidasks as $bidask) {
-            $price = (string) $bidask[0];
-            $result[$price] = array_key_exists ($price, $result) ? $result[$price] : 0;
-            $result[$price] += $bidask[1];
+            if ($bidask[1] > 0) {
+                $price = (string) $bidask[0];
+                $result[$price] = array_key_exists ($price, $result) ? $result[$price] : 0;
+                $result[$price] += $bidask[1];
+            }
         }
 
         $output = array ();
@@ -466,8 +478,6 @@ abstract class Exchange {
 
     public function __construct ($options = array ()) {
 
-        global $version;
-
         $this->curl        = curl_init ();
         $this->id          = null;
 
@@ -507,6 +517,7 @@ abstract class Exchange {
         $this->userAgent   = null; // 'ccxt/' . $version . ' (+https://github.com/ccxt/ccxt) PHP/' . PHP_VERSION;
         $this->userAgents = array (
             'chrome' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.94 Safari/537.36',
+            'chrome39' => 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.71 Safari/537.36',
         );
         $this->substituteCommonCurrencyCodes = true;
         $this->timeframes = null;
@@ -822,7 +833,7 @@ abstract class Exchange {
 
         $this->handle_errors ($http_status_code, $curl_error, $url, $method, $response_headers, $result);
 
-        if ($http_status_code == 429) {
+        if (in_array ($http_status_code, array (418, 429))) {
 
             $this->raise_error ('DDoSProtection', $url, $method, $http_status_code,
                 'not accessible from this location at the moment');
@@ -941,7 +952,7 @@ abstract class Exchange {
             $quote_currencies = array_map (function ($market) {
                 return array (
                     'id' => array_key_exists ('quoteId', $market) ? $market['quoteId'] : $market['quote'],
-                    'code' => $market['base'],
+                    'code' => $market['quote'],
                 );
             }, array_filter ($values, function ($market) {
                 return array_key_exists ('quote', $market);
@@ -1418,8 +1429,7 @@ abstract class Exchange {
         return $this->market_id ($symbol);
     }
 
-    function __call ($function, $params) {
-
+    public function __call ($function, $params) {
         if (array_key_exists ($function, $this))
             return call_user_func_array ($this->$function, $params);
         else {
@@ -1427,4 +1437,12 @@ abstract class Exchange {
             echo $function . ' not found';
         }
     }
+
+    public function __sleep () {
+        $return = array_keys (array_filter (get_object_vars ($this), function ($var) {
+            return !(is_object ($var) || is_resource ($var) || is_callable ($var));
+        }));
+        return $return;
+    }
+
 }
