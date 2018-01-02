@@ -62,17 +62,54 @@ class coinfloor (Exchange):
         })
 
     def fetch_balance(self, params={}):
-        symbol = None
+        symbols = None
         if 'symbol' in params:
-            symbol = params['symbol']
-        if 'id' in params:
-            symbol = params['id']
-        if not symbol:
-            raise ExchangeError(self.id + ' fetchBalance requires a symbol param')
-        # todo parse balance
-        return self.privatePostIdBalance({
-            'id': self.market_id(symbol),
-        })
+            symbols = [params['symbol']]
+        elif 'id' in params:
+            symbols = [params['id']]
+        else:
+            symbols = self.markets
+
+        balances = {
+            'info': []
+        }
+        for symbol in symbols:
+            market = self.market(symbol)
+            id = market['id']
+            base = market['base']
+            quote = market['quote']
+
+            resp = self.privatePostIdBalance({
+                'id': id,
+            })
+            balances['info'].append(resp)
+
+            if 'free' not in balances:
+                balances['free'] = {}
+                balances['used'] = {}
+                balances['total'] = {}
+
+            base_key, quote_key = id.lower().split('/')
+            balances['free'][base] = resp[base_key+'_available']
+            balances['free'][quote] = resp[quote_key + '_available']
+            balances['used'][base] = resp[base_key + '_reserved']
+            balances['used'][quote] = resp[quote_key + '_reserved']
+            balances['total'][base] = resp[base_key + '_balance']
+            balances['total'][quote] = resp[quote_key + '_balance']
+
+            balances[base] = {
+                'free': balances['free'][base],
+                'used': balances['used'][base],
+                'total': balances['total'][base]
+            }
+            balances[quote] = {
+                'free': balances['free'][quote],
+                'used': balances['used'][quote],
+                'total': balances['total'][quote]
+            }
+        return balances
+
+
 
     def fetch_order_book(self, symbol, params={}):
         orderbook = self.publicGetIdOrderBook(self.extend({
