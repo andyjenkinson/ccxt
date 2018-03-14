@@ -355,6 +355,17 @@ class cex (Exchange):
             orders[i] = self.extend(orders[i], {'status': 'open'})
         return self.parse_orders(orders, market, since, limit)
 
+    def fetch_closed_orders(self, symbol=None, since=None, limit=None, params={}):
+        self.load_markets()
+        request = {}
+        method = 'privatePostArchivedOrdersPair'
+        if symbol is None:
+            raise NotSupported('Symbol pair is required for closed orders')
+        market = self.market(symbol)
+        request['pair'] = market['id']
+        orders = getattr(self, method)(self.extend(request, params))
+        return self.parse_orders(orders, market, since, limit)
+
     def fetch_order(self, id, symbol=None, params={}):
         self.load_markets()
         response = self.privatePostGetOrder(self.extend({
