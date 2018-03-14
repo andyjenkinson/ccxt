@@ -1,14 +1,13 @@
-"use strict";
+'use strict';
 
 //  ---------------------------------------------------------------------------
 
-const Exchange = require ('./base/Exchange')
-const { ExchangeError, AuthenticationError } = require ('./base/errors')
+const Exchange = require ('./base/Exchange');
+const { ExchangeError, AuthenticationError } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
 module.exports = class gatecoin extends Exchange {
-
     describe () {
         return this.deepExtend (super.describe (), {
             'id': 'gatecoin',
@@ -16,9 +15,12 @@ module.exports = class gatecoin extends Exchange {
             'rateLimit': 2000,
             'countries': 'HK', // Hong Kong
             'comment': 'a regulated/licensed exchange',
-            'hasCORS': false,
-            'hasFetchTickers': true,
-            'hasFetchOHLCV': true,
+            'has': {
+                'CORS': false,
+                'fetchOHLCV': true,
+                'fetchOpenOrders': true,
+                'fetchTickers': true,
+            },
             'timeframes': {
                 '1m': '1m',
                 '15m': '15m',
@@ -186,20 +188,45 @@ module.exports = class gatecoin extends Exchange {
     }
 
     async fetchMarkets () {
-        let response = await this.publicGetPublicLiveTickers ();
-        let markets = response['tickers'];
+        let response = await this.publicGetReferenceCurrencyPairs ();
+        let markets = response['currencyPairs'];
         let result = [];
-        for (let p = 0; p < markets.length; p++) {
-            let market = markets[p];
-            let id = market['currencyPair'];
-            let base = id.slice (0, 3);
-            let quote = id.slice (3, 6);
+        for (let i = 0; i < markets.length; i++) {
+            let market = markets[i];
+            let id = market['tradingCode'];
+            let baseId = market['baseCurrency'];
+            let quoteId = market['quoteCurrency'];
+            let base = baseId;
+            let quote = quoteId;
             let symbol = base + '/' + quote;
+            let precision = {
+                'amount': 8,
+                'price': market['priceDecimalPlaces'],
+            };
+            let limits = {
+                'amount': {
+                    'min': Math.pow (10, -precision['amount']),
+                    'max': undefined,
+                },
+                'price': {
+                    'min': Math.pow (10, -precision['amount']),
+                    'max': undefined,
+                },
+                'cost': {
+                    'min': undefined,
+                    'max': undefined,
+                },
+            };
             result.push ({
                 'id': id,
                 'symbol': symbol,
                 'base': base,
                 'quote': quote,
+                'baseId': baseId,
+                'quoteId': quoteId,
+                'active': true,
+                'precision': precision,
+                'limits': limits,
                 'info': market,
             });
         }
@@ -219,7 +246,8 @@ module.exports = class gatecoin extends Exchange {
                 'used': this.sum (
                     balance['pendingIncoming'],
                     balance['pendingOutgoing'],
-                    balance['openOrder']),
+                    balance['openOrder']
+                ),
                 'total': balance['balance'],
             };
             result[currency] = account;
@@ -227,7 +255,7 @@ module.exports = class gatecoin extends Exchange {
         return this.parseBalance (result);
     }
 
-    async fetchOrderBook (symbol, params = {}) {
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
         let market = this.market (symbol);
         let orderbook = await this.publicGetPublicMarketDepthCurrencyPair (this.extend ({
@@ -295,7 +323,7 @@ module.exports = class gatecoin extends Exchange {
         let side = undefined;
         let order = undefined;
         if ('way' in trade) {
-            side = (trade['way'] == 'bid') ? 'buy' : 'sell';
+            side = (trade['way'] === 'bid') ? 'buy' : 'sell';
             let orderId = trade['way'] + 'OrderId';
             order = trade[orderId];
         }
@@ -343,7 +371,7 @@ module.exports = class gatecoin extends Exchange {
             'CurrencyPair': market['id'],
             'Timeframe': this.timeframes[timeframe],
         };
-        if (limit)
+        if (typeof limit !== 'undefined')
             request['Count'] = limit;
         request = this.extend (request, params);
         let response = await this.publicGetPublicTickerHistoryCurrencyPairTimeframe (request);
@@ -354,10 +382,10 @@ module.exports = class gatecoin extends Exchange {
         await this.loadMarkets ();
         let order = {
             'Code': this.marketId (symbol),
-            'Way': (side == 'buy') ? 'Bid' : 'Ask',
+            'Way': (side === 'buy') ? 'Bid' : 'Ask',
             'Amount': amount,
         };
-        if (type == 'limit')
+        if (type === 'limit')
             order['Price'] = price;
         if (this.twofa) {
             if ('ValidationCode' in params)
@@ -377,25 +405,74 @@ module.exports = class gatecoin extends Exchange {
         return await this.privateDeleteTradeOrdersOrderID ({ 'OrderID': id });
     }
 
+    parseOrder (order, market = undefined) {
+        let side = (order['side'] === 0) ? 'buy' : 'sell';
+        let type = (order['type'] === 0) ? 'limit' : 'market';
+        let symbol = undefined;
+        if (typeof market === 'undefined') {
+            let marketId = this.safeString (order, 'code');
+            if (marketId in this.markets_by_id)
+                market = this.markets_by_id[marketId];
+        }
+        if (typeof market !== 'undefined')
+            symbol = market['symbol'];
+        let timestamp = parseInt (order['date']) * 1000;
+        let amount = order['initialQuantity'];
+        let remaining = order['remainingQuantity'];
+        let filled = amount - remaining;
+        let price = order['price'];
+        let cost = price * filled;
+        let id = order['clOrderId'];
+        let status = 'open'; // they report open orders only? TODO use .orders cache for emulation
+        let result = {
+            'id': id,
+            'datetime': this.iso8601 (timestamp),
+            'timestamp': timestamp,
+            'status': status,
+            'symbol': symbol,
+            'type': type,
+            'side': side,
+            'price': price,
+            'amount': amount,
+            'filled': filled,
+            'remaining': remaining,
+            'cost': cost,
+            'trades': undefined,
+            'fee': undefined,
+            'info': order,
+        };
+        return result;
+    }
+
+    async fetchOpenOrders (symbol = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        let response = await this.privateGetTradeOrders ();
+        let orders = this.parseOrders (response['orders'], undefined, since, limit);
+        if (typeof symbol !== 'undefined')
+            return this.filterBySymbol (orders, symbol);
+        return orders;
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'] + '/' + this.implodeParams (path, params);
         let query = this.omit (params, this.extractParams (path));
-        if (api == 'public') {
+        if (api === 'public') {
             if (Object.keys (query).length)
                 url += '?' + this.urlencode (query);
         } else {
             this.checkRequiredCredentials ();
             let nonce = this.nonce ();
-            let contentType = (method == 'GET') ? '' : 'application/json';
-            let auth = method + url + contentType + nonce.toString ();
+            let nonceString = nonce.toString ();
+            let contentType = (method === 'GET') ? '' : 'application/json';
+            let auth = method + url + contentType + nonceString;
             auth = auth.toLowerCase ();
             let signature = this.hmac (this.encode (auth), this.encode (this.secret), 'sha256', 'base64');
             headers = {
                 'API_PUBLIC_KEY': this.apiKey,
-                'API_REQUEST_SIGNATURE': signature,
-                'API_REQUEST_DATE': nonce,
+                'API_REQUEST_SIGNATURE': this.decode (signature),
+                'API_REQUEST_DATE': nonceString,
             };
-            if (method != 'GET') {
+            if (method !== 'GET') {
                 headers['Content-Type'] = contentType;
                 body = this.json (this.extend ({ 'nonce': nonce }, params));
             }
@@ -407,8 +484,8 @@ module.exports = class gatecoin extends Exchange {
         let response = await this.fetch2 (path, api, method, params, headers, body);
         if ('responseStatus' in response)
             if ('message' in response['responseStatus'])
-                if (response['responseStatus']['message'] == 'OK')
+                if (response['responseStatus']['message'] === 'OK')
                     return response;
         throw new ExchangeError (this.id + ' ' + this.json (response));
     }
-}
+};

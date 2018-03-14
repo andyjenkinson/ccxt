@@ -1,13 +1,13 @@
-"use strict";
+'use strict';
 
 // ---------------------------------------------------------------------------
 
-const bittrex = require ('./bittrex.js')
+const bittrex = require ('./bittrex.js');
+const { AuthenticationError, InvalidOrder, InsufficientFunds } = require ('./base/errors');
 
 // ---------------------------------------------------------------------------
 
 module.exports = class bleutrade extends bittrex {
-
     describe () {
         return this.deepExtend (super.describe (), {
             'id': 'bleutrade',
@@ -15,9 +15,10 @@ module.exports = class bleutrade extends bittrex {
             'countries': 'BR', // Brazil
             'rateLimit': 1000,
             'version': 'v2',
-            'hasCORS': true,
-            'hasFetchTickers': true,
-            'hasFetchOHLCV': false,
+            'has': {
+                'CORS': true,
+                'fetchTickers': true,
+            },
             'urls': {
                 'logo': 'https://user-images.githubusercontent.com/1294454/30303000-b602dbe6-976d-11e7-956d-36c5049c01e7.jpg',
                 'api': {
@@ -27,6 +28,64 @@ module.exports = class bleutrade extends bittrex {
                 },
                 'www': 'https://bleutrade.com',
                 'doc': 'https://bleutrade.com/help/API',
+                'fees': 'https://bleutrade.com/help/fees_and_deadlines',
+            },
+            'fees': {
+                'funding': {
+                    'withdraw': {
+                        'ADC': 0.1,
+                        'BTA': 0.1,
+                        'BITB': 0.1,
+                        'BTC': 0.001,
+                        'BCC': 0.001,
+                        'BTCD': 0.001,
+                        'BTG': 0.001,
+                        'BLK': 0.1,
+                        'CDN': 0.1,
+                        'CLAM': 0.01,
+                        'DASH': 0.001,
+                        'DCR': 0.05,
+                        'DGC': 0.1,
+                        'DP': 0.1,
+                        'DPC': 0.1,
+                        'DOGE': 10.0,
+                        'EFL': 0.1,
+                        'ETH': 0.01,
+                        'EXP': 0.1,
+                        'FJC': 0.1,
+                        'BSTY': 0.001,
+                        'GB': 0.1,
+                        'NLG': 0.1,
+                        'HTML': 1.0,
+                        'LTC': 0.001,
+                        'MONA': 0.01,
+                        'MOON': 1.0,
+                        'NMC': 0.015,
+                        'NEOS': 0.1,
+                        'NVC': 0.05,
+                        'OK': 0.1,
+                        'PPC': 0.1,
+                        'POT': 0.1,
+                        'XPM': 0.001,
+                        'QTUM': 0.1,
+                        'RDD': 0.1,
+                        'SLR': 0.1,
+                        'START': 0.1,
+                        'SLG': 0.1,
+                        'TROLL': 0.1,
+                        'UNO': 0.01,
+                        'VRC': 0.1,
+                        'VTC': 0.1,
+                        'XVP': 0.1,
+                        'WDC': 0.001,
+                        'ZET': 0.1,
+                    },
+                },
+            },
+            'exceptions': {
+                'Insufficient funds!': InsufficientFunds,
+                'Invalid Order ID': InvalidOrder,
+                'Invalid apikey or apisecret': AuthenticationError,
             },
         });
     }
@@ -47,7 +106,7 @@ module.exports = class bleutrade extends bittrex {
                 'price': 8,
             };
             let active = market['IsActive'];
-            result.push (this.extend (this.fees['trading'], {
+            result.push ({
                 'id': id,
                 'symbol': symbol,
                 'base': base,
@@ -70,19 +129,25 @@ module.exports = class bleutrade extends bittrex {
                         'max': undefined,
                     },
                 },
-            }));
+            });
         }
         return result;
     }
 
-    async fetchOrderBook (symbol, params = {}) {
+    getOrderIdField () {
+        return 'orderid';
+    }
+
+    async fetchOrderBook (symbol, limit = undefined, params = {}) {
         await this.loadMarkets ();
-        let response = await this.publicGetOrderbook (this.extend ({
+        let request = {
             'market': this.marketId (symbol),
             'type': 'ALL',
-            'depth': 50,
-        }, params));
+        };
+        if (typeof limit !== 'undefined')
+            request['depth'] = limit; // 50
+        let response = await this.publicGetOrderbook (this.extend (request, params));
         let orderbook = response['result'];
         return this.parseOrderBook (orderbook, undefined, 'buy', 'sell', 'Rate', 'Quantity');
     }
-}
+};
