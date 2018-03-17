@@ -5,7 +5,7 @@
 
 from ccxt.base.exchange import Exchange
 import base64
-from ccxt.base.errors import ExchangeError
+from ccxt.base.errors import NotSupported
 
 
 class coinfloor (Exchange):
@@ -67,54 +67,32 @@ class coinfloor (Exchange):
         })
 
     def fetch_balance(self, params={}):
-        symbols = None
+        market = None
         if 'symbol' in params:
-            symbols = [params['symbol']]
-        elif 'id' in params:
-            symbols = [params['id']]
-        else:
-            symbols = self.markets
-
-        balances = {
-            'info': []
+            market = self.find_market(params['symbol'])
+        if 'id' in params:
+            market = self.find_market(params['id'])
+        if not market:
+            raise NotSupported(self.id + ' fetchBalance requires a symbol param')
+        info = self.privatePostIdBalance({
+            'id': market['id'],
+        })
+        result = {
+            'info': info,
         }
-        for symbol in symbols:
-            market = self.market(symbol)
-            id = market['id']
-            base = market['base']
-            quote = market['quote']
-
-            resp = self.privatePostIdBalance({
-                'id': id,
-            })
-            balances['info'].append(resp)
-
-            if 'free' not in balances:
-                balances['free'] = {}
-                balances['used'] = {}
-                balances['total'] = {}
-
-            base_key, quote_key = id.lower().split('/')
-            balances['free'][base] = resp[base_key+'_available']
-            balances['free'][quote] = resp[quote_key + '_available']
-            balances['used'][base] = resp[base_key + '_reserved']
-            balances['used'][quote] = resp[quote_key + '_reserved']
-            balances['total'][base] = resp[base_key + '_balance']
-            balances['total'][quote] = resp[quote_key + '_balance']
-
-            balances[base] = {
-                'free': balances['free'][base],
-                'used': balances['used'][base],
-                'total': balances['total'][base]
-            }
-            balances[quote] = {
-                'free': balances['free'][quote],
-                'used': balances['used'][quote],
-                'total': balances['total'][quote]
-            }
-        return balances
-
-
+        # base/quote used for keys e.g. "xbt_reserved"
+        keys = market['id'].lower().split('/')
+        result[market['base']] = {
+            'free': float(info[keys[0] + '_available']),
+            'used': float(info[keys[0] + '_reserved']),
+            'total': float(info[keys[0] + '_balance']),
+        }
+        result[market['quote']] = {
+            'free': float(info[keys[1] + '_available']),
+            'used': float(info[keys[1] + '_reserved']),
+            'total': float(info[keys[1] + '_balance']),
+        }
+        return self.parse_balance(result)
 
     def fetch_order_book(self, symbol, limit=None, params={}):
         orderbook = self.publicGetIdOrderBook(self.extend({

@@ -65,17 +65,32 @@ class coinfloor extends Exchange {
     }
 
     public function fetch_balance ($params = array ()) {
-        $symbol = null;
+        $market = null;
         if (is_array ($params) && array_key_exists ('symbol', $params))
-            $symbol = $params['symbol'];
+            $market = $this->find_market($params['symbol']);
         if (is_array ($params) && array_key_exists ('id', $params))
-            $symbol = $params['id'];
-        if (!$symbol)
-            throw new ExchangeError ($this->id . ' fetchBalance requires a $symbol param');
-        // todo parse balance
-        return $this->privatePostIdBalance (array (
-            'id' => $this->market_id($symbol),
+            $market = $this->find_market($params['id']);
+        if (!$market)
+            throw new NotSupported ($this->id . ' fetchBalance requires a symbol param');
+        $info = $this->privatePostIdBalance (array (
+            'id' => $market['id'],
         ));
+        $result = array (
+            'info' => $info,
+        );
+        // base/quote used for $keys e.g. "xbt_reserved"
+        $keys = strtolower (explode ('/', $market['id']));
+        $result[$market['base']] = array (
+            'free' => floatval ($info[$keys[0] . '_available']),
+            'used' => floatval ($info[$keys[0] . '_reserved']),
+            'total' => floatval ($info[$keys[0] . '_balance']),
+        );
+        $result[$market['quote']] = array (
+            'free' => floatval ($info[$keys[1] . '_available']),
+            'used' => floatval ($info[$keys[1] . '_reserved']),
+            'total' => floatval ($info[$keys[1] . '_balance']),
+        );
+        return $this->parse_balance($result);
     }
 
     public function fetch_order_book ($symbol, $limit = null, $params = array ()) {
